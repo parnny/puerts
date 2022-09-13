@@ -11,24 +11,20 @@ struct FGenImp
 
     FString GetNamePrefix(const puerts::CTypeInfo* TypeInfo)
     {
-        return TypeInfo->IsUEType() ? "UE." : "";
+        return TypeInfo->IsUEType() && !HadNamespace(TypeInfo->Name()) ? "UE." : "";
     }
 
     FString GetName(const puerts::CTypeInfo* TypeInfo)
     {
-        FString Ret = UTF8_TO_TCHAR(TypeInfo->Name());
-        if (TypeInfo->IsUEType())
-        {
-            return Ret.Mid(1);
-        }
-        return Ret;
+        return UTF8_TO_TCHAR(TypeInfo->Name());
     }
 
     void Begin()
     {
         Output << "declare module \"cpp\" {\n";
         Output << "    import * as UE from \"ue\"\n";
-        Output << "    import {$Ref, $Nullable} from \"puerts\"\n\n";
+        Output << "    import * as cpp from \"cpp\"\n";
+        Output << "    import {$Ref, $Nullable, cstring} from \"puerts\"\n\n";
     }
 
     void GenArguments(const puerts::CFunctionInfo* Type, FStringBuffer& Buff)
@@ -48,7 +44,7 @@ struct FGenImp
 
             Buff << ": ";
 
-            if (!argInfo->IsConst() && !argInfo->IsUEType() && !argInfo->IsObjectType() && argInfo->IsPointer())
+            if (strcmp(argInfo->Name(), "cstring") != 0 && !argInfo->IsUEType() && !argInfo->IsObjectType() && argInfo->IsPointer())
             {
                 Buff << "ArrayBuffer";
             }
@@ -82,7 +78,7 @@ struct FGenImp
 
     void GenClass(const puerts::JSClassDefinition* ClassDefinition)
     {
-        if (IsUEContainer(ClassDefinition->ScriptName))
+        if (HasUENamespace(ClassDefinition->ScriptName))
             return;
         Output << "    class " << ClassDefinition->ScriptName;
         if (ClassDefinition->SuperTypeId)
@@ -111,7 +107,8 @@ struct FGenImp
         puerts::NamedPropertyInfo* PropertyInfo = ClassDefinition->PropertyInfos;
         while (PropertyInfo && PropertyInfo->Name && PropertyInfo->Type)
         {
-            Output << "        " << PropertyInfo->Name << ": " << PropertyInfo->Type << ";\n";
+            Output << "        " << PropertyInfo->Name << ": " << GetNamePrefix(PropertyInfo->Type) << PropertyInfo->Type->Name()
+                   << ";\n";
             ++PropertyInfo;
         }
 
@@ -120,7 +117,7 @@ struct FGenImp
         {
             int Pos = VariableInfo - ClassDefinition->VariableInfos;
             Output << "        static " << (ClassDefinition->Variables[Pos].Setter ? "" : "readonly ") << VariableInfo->Name << ": "
-                   << VariableInfo->Type << ";\n";
+                   << GetNamePrefix(VariableInfo->Type) << VariableInfo->Type->Name() << ";\n";
             ++VariableInfo;
         }
 
