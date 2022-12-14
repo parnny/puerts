@@ -5,6 +5,8 @@
 * This file is subject to the terms and conditions defined in file 'LICENSE', which is part of this source code package.
 */
 
+#if !EXPERIMENTAL_IL2CPP_PUERTS || !ENABLE_IL2CPP
+
 using System;
 using System.Collections.Generic;
 
@@ -189,7 +191,7 @@ namespace Puerts
 
                     return result;
                 case JsValueType.Number:
-                    return IntTranslator(jsEnvIdx, isolate, getValueApi, value, isByRef);
+                    return DoubleTranslator(jsEnvIdx, isolate, getValueApi, value, isByRef);
                 case JsValueType.String:
                     return StringTranslator(jsEnvIdx, isolate, getValueApi, value, isByRef);
                 default:
@@ -585,3 +587,5 @@ namespace Puerts
         }
     }
 }
+
+#endif

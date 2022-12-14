@@ -58,7 +58,7 @@ struct DECLARATIONGENERATOR_API FTypeScriptDeclarationGenerator
 
     struct BlueprintTypeDeclInfo
     {
-        FString TypeDecl;
+        TMap<FName, FString> NameToDecl;
         FString FileVersionString;
         bool IsExist;
         bool Changed;
@@ -84,13 +84,13 @@ struct DECLARATIONGENERATOR_API FTypeScriptDeclarationGenerator
 
     void RestoreBlueprintTypeDeclInfos(const FString& FileContent);
 
-    void LoadAllWidgetBlueprint(FName SearchPath);
+    void LoadAllWidgetBlueprint(FName InSearchPath, bool InGenFull);
 
     void InitExtensionMethodsMap();
 
     virtual void Begin(FString Namespace = TEXT("ue"));
 
-    void GenTypeScriptDeclaration(bool GenStruct = false, bool GenEnum = false);
+    void GenTypeScriptDeclaration(bool InGenStruct, bool InGenEnum);
 
     virtual void Gen(UObject* ToGen);
 
