@@ -49,6 +49,7 @@ static FString SafeName(const FString& Name)
 {
     auto Ret = Name.Replace(TEXT(" "), TEXT(""))
                    .Replace(TEXT("-"), TEXT("_"))
+                   .Replace(TEXT("+"), TEXT("_"))
                    .Replace(TEXT("/"), TEXT("_"))
                    .Replace(TEXT("("), TEXT("_"))
                    .Replace(TEXT(")"), TEXT("_"))
@@ -433,6 +434,21 @@ const FString& FTypeScriptDeclarationGenerator::GetNamespace(UObject* Obj)
     return Iter->second;
 }
 
+bool FTypeScriptDeclarationGenerator::PathIsValid(UObject* Obj)
+{
+    if (Obj->IsNative())
+    {
+        return true;
+    }
+    auto Iter = PathIsValidMap.find(Obj);
+    if (Iter == PathIsValidMap.end())
+    {
+        PathIsValidMap[Obj] = SafeName(Obj->GetName()) == Obj->GetName() && SafeName(GetNamespace(Obj)) == GetNamespace(Obj);
+        Iter = PathIsValidMap.find(Obj);
+    }
+    return Iter->second;
+}
+
 FString FTypeScriptDeclarationGenerator::GetNameWithNamespace(UObject* Obj)
 {
 #if !defined(WITHOUT_BP_NAMESPACE)
@@ -605,6 +621,11 @@ void FTypeScriptDeclarationGenerator::Gen(UObject* ToGen)
         return;
     }
 #endif
+    if (!PathIsValid(ToGen))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("invalid path found in ue.d.ts generate: %s.%s"), *GetNamespace(ToGen), *ToGen->GetName());
+        return;
+    }
     if (Processed.Contains(ToGen))
         return;
     if (ToGen->IsNative() && ProcessedByName.Contains(SafeName(ToGen->GetName())))
@@ -702,6 +723,10 @@ bool FTypeScriptDeclarationGenerator::GenTypeDecl(FStringBuffer& StringBuffer, P
             {
                 return false;
             }
+            if (!PathIsValid(StructProperty->Struct))
+            {
+                return false;
+            }
             AddToGen.Add(StructProperty->Struct);
         }
         if (StructProperty->Struct->GetName() == TEXT("JsObject"))
@@ -753,6 +778,10 @@ bool FTypeScriptDeclarationGenerator::GenTypeDecl(FStringBuffer& StringBuffer, P
         const FString& Name = GetNameWithNamespace(ObjectProperty->PropertyClass);
         const TArray<FString>& IgnoreClassListOnDTS = IPuertsModule::Get().GetIgnoreClassListOnDTS();
         if (IgnoreClassListOnDTS.Contains(Name))
+        {
+            return false;
+        }
+        if (!PathIsValid(ObjectProperty->PropertyClass))
         {
             return false;
         }
@@ -1085,6 +1114,11 @@ void FTypeScriptDeclarationGenerator::GenClass(UClass* Class)
     StringBuffer << "class " << SafeName(Class->GetName());
 
     auto Super = Class->GetSuperStruct();
+
+    while (Super && !PathIsValid(Super))
+    {
+        Super = Super->GetSuperStruct();
+    }
 
     if (Super)
     {
