@@ -31,11 +31,14 @@ public class JsEnv : ModuleRules
     private bool ThreadSafe = false;
 
     private bool FTextAsString = true;
-
+    
+    public static bool WithSourceControl = false;
+    
     public JsEnv(ReadOnlyTargetRules Target) : base(Target)
     {
         //PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
         PublicDefinitions.Add("USING_IN_UNREAL_ENGINE");
+        //PublicDefinitions.Add("WITH_V8_FAST_CALL");
         
         PublicDefinitions.Add("TS_BLUEPRINT_PATH=\"/Blueprints/TypeScript/\"");
         

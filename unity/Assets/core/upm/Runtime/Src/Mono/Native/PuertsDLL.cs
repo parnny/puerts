@@ -37,11 +37,6 @@ namespace Puerts
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN || PUERTS_GENERAL || (UNITY_WSA && !UNITY_EDITOR)
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 #endif
-    public delegate string ModuleResolveCallback(string identifer, int jsEnvIdx, out string pathForDebug);
-
-#if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN || PUERTS_GENERAL || (UNITY_WSA && !UNITY_EDITOR)
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-#endif
     public delegate void V8DestructorCallback(IntPtr self, long data);
 
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN || PUERTS_GENERAL || (UNITY_WSA && !UNITY_EDITOR)
@@ -87,6 +82,11 @@ namespace Puerts
             {
                 return _GetApiLevel();
             } 
+            catch(DllNotFoundException)
+            {
+                UnityEngine.Debug.LogError("[Puer001] DllNotFoundException detected. You can solve this problem following the FAQ.");
+                throw;
+            }
             catch(Exception) 
             {
                 return GetLibVersion();
@@ -188,20 +188,8 @@ namespace Puerts
             SetGeneralDestructor(isolate, fn);
         }
 
-        [DllImport(DLLNAME, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void SetModuleResolver(IntPtr isolate, IntPtr callback, int jsEnvIdx);
-        public static void SetModuleResolver(IntPtr isolate, ModuleResolveCallback callback, int jsEnvIdx)
-        {
-#if PUERTS_GENERAL || (UNITY_WSA && !UNITY_EDITOR)
-            GCHandle.Alloc(callback);
-#endif
-            IntPtr fn = callback == null ? IntPtr.Zero : Marshal.GetFunctionPointerForDelegate(callback);
-            SetModuleResolver(isolate, fn, jsEnvIdx);
-        }
-
-
-        [DllImport(DLLNAME, CallingConvention = CallingConvention.Cdecl)]
-        public static extern IntPtr ExecuteModule(IntPtr isolate, string path, string exportee);
+        // [DllImport(DLLNAME, CallingConvention = CallingConvention.Cdecl)]
+        // public static extern IntPtr ExecuteModule(IntPtr isolate, string path, string exportee);
 
         [DllImport(DLLNAME, CallingConvention = CallingConvention.Cdecl)]
         public static extern bool ClearModuleCache(IntPtr isolate, string path);
@@ -457,6 +445,7 @@ namespace Puerts
         [DllImport(DLLNAME, CallingConvention = CallingConvention.Cdecl)]
         public static extern void SetNullToOutValue(IntPtr isolate, IntPtr value);
 
+#if PUERTS_GENERAL && !PUERTS_GENERAL_OSX
         [DllImport(DLLNAME, CallingConvention = CallingConvention.Cdecl)]
         public static extern void ThrowException(IntPtr isolate, byte[] message);
 
@@ -465,6 +454,10 @@ namespace Puerts
             var bytes = Encoding.UTF8.GetBytes(message);
             ThrowException(isolate, bytes);
         }
+#else
+        [DllImport(DLLNAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void ThrowException(IntPtr isolate, string message);
+#endif
 
         //begin cs call js
         [DllImport(DLLNAME, CallingConvention = CallingConvention.Cdecl)]

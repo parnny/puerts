@@ -244,6 +244,7 @@ namespace Puerts.Editor
                 public bool IsDelegate;
                 public string DelegateDef;
                 public bool IsInterface;
+                public string IteratorReturnName;
                 public string Namespace;
                 public TsTypeGenInfo BaseType;
                 public TsTypeGenInfo[] interfaces;
@@ -344,6 +345,12 @@ namespace Puerts.Editor
                                 Document = DocResolver.GetTsDocument(interfaces[i]),
                                 Namespace = interfaces[i].Namespace
                             };
+
+                            if (result.IsGenericTypeDefinition && interfaces[i].IsGenericType &&
+                                typeof(IEnumerable<>) == interfaces[i].GetGenericTypeDefinition())
+                            {
+                                result.IteratorReturnName = Utils.GetTsTypeName(interfaces[i].GenericTypeArguments[0]);
+                            }
                             if (interfaces[i].IsNested)
                             {
                                 List<string> p = new List<string>();
@@ -456,12 +463,12 @@ namespace Puerts.Editor
                         AddRefType(workTypes, refTypes, type);
                         var defType = type.IsGenericType ? type.GetGenericTypeDefinition() : type;
                         if (!genTypeSet.Contains(defType)) genTypeSet.Add(defType);
-                        foreach (var field in type.GetFields(Utils.Flags))
+                        foreach (var field in type.GetFields(Utils.Flags).Where(m => Utils.getBindingMode(m) != BindingMode.DontBinding))
                         {
                             AddRefType(workTypes, refTypes, field.FieldType);
                         }
 
-                        foreach (var method in type.GetMethods(Utils.Flags))
+                        foreach (var method in type.GetMethods(Utils.Flags).Where(m => Utils.getBindingMode(m) != BindingMode.DontBinding))
                         {
                             AddRefType(workTypes, refTypes, method.ReturnType);
                             foreach (var pinfo in method.GetParameters())
