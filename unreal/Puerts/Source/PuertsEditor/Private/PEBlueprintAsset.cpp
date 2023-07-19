@@ -20,7 +20,6 @@
 #include "FileHelpers.h"
 #include "Misc/PackageName.h"
 #include "UObject/MetaData.h"
-#include "FunctionParametersDuplicate.h"
 #include "CoreGlobals.h"
 #include "K2Node_FunctionEntry.h"
 #include "EdGraphSchema_K2_Actions.h"
@@ -40,6 +39,7 @@
 #include "PuertsModule.h"
 #include "Engine/SimpleConstructionScript.h"
 #include "Engine/SCS_Node.h"
+#include "Kismet2/ComponentEditorUtils.h"
 
 #define LOCTEXT_NAMESPACE "UPEBlueprintAsset"
 
@@ -966,6 +966,85 @@ void UPEBlueprintAsset::RemoveComponent(FName ComponentName)
     }
 }
 
+void UPEBlueprintAsset::SetupAttachment(FName InComponentName, FName InParentComponentName)
+{
+    if (Blueprint->SimpleConstructionScript)
+    {
+        auto SCS_Node = Blueprint->SimpleConstructionScript->FindSCSNode(InComponentName);
+        if (!SCS_Node)
+        {
+            UE_LOG(LogTemp, Error, TEXT("SetupAttachment: can not find %s"), *InComponentName.ToString());
+            return;
+        }
+        if (!SCS_Node->ComponentClass || !SCS_Node->ComponentClass->IsChildOf<UActorComponent>())
+        {
+            UE_LOG(LogTemp, Error, TEXT("SetupAttachment: %s not a UActorComponent"), *InComponentName.ToString());
+            return;
+        }
+        auto Parent_SCS_Node = Blueprint->SimpleConstructionScript->FindSCSNode(InParentComponentName);
+        if (!Parent_SCS_Node)
+        {
+            UE_LOG(LogTemp, Error, TEXT("SetupAttachment: can not find parent %s"), *InParentComponentName.ToString());
+            return;
+        }
+        if (!Parent_SCS_Node->ComponentClass || !Parent_SCS_Node->ComponentClass->IsChildOf<UActorComponent>())
+        {
+            UE_LOG(LogTemp, Error, TEXT("SetupAttachment: %s not a UActorComponent"), *InParentComponentName.ToString());
+            return;
+        }
+
+        if (!Parent_SCS_Node->ChildNodes.Contains(SCS_Node))
+        {
+            NeedSave = true;
+            Blueprint->SimpleConstructionScript->RemoveNode(SCS_Node);
+            USceneComponent* SceneComponentTemplate = Cast<USceneComponent>(SCS_Node->ComponentClass);
+            if (SceneComponentTemplate)
+            {
+                // Save current state
+                SceneComponentTemplate->Modify();
+
+                // Reset the attach socket name
+                SceneComponentTemplate->SetupAttachment(SceneComponentTemplate->GetAttachParent(), NAME_None);
+                SCS_Node->Modify();
+                SCS_Node->AttachToName = NAME_None;
+            }
+            Parent_SCS_Node->AddChildNode(SCS_Node);
+        }
+    }
+}
+
+void UPEBlueprintAsset::SetupAttachments(TMap<FName, FName> InAttachments)
+{
+    if (Blueprint->SimpleConstructionScript)
+    {
+        for (auto& KV : InAttachments)
+        {
+            SetupAttachment(KV.Key, KV.Value);
+        }
+
+        for (auto& Component : ComponentsAdded)
+        {
+            auto SCS_Node = Blueprint->SimpleConstructionScript->FindSCSNode(Component);
+            if (SCS_Node)
+            {
+                for (int32 ChildIdx = 0; ChildIdx < SCS_Node->ChildNodes.Num(); ChildIdx++)
+                {
+                    USCS_Node* ChildNode = SCS_Node->ChildNodes[ChildIdx];
+                    check(ChildNode != NULL);
+                    if (!InAttachments.Contains(ChildNode->GetVariableName()) ||
+                        InAttachments[ChildNode->GetVariableName()] != Component)
+                    {
+                        SCS_Node->RemoveChildNode(ChildNode);
+                        Blueprint->SimpleConstructionScript->AddNode(ChildNode);
+                        SCS_Node->Modify();
+                        NeedSave = true;
+                    }
+                }
+            }
+        }
+    }
+}
+
 void UPEBlueprintAsset::AddMemberVariable(FName NewVarName, FPEGraphPinType InGraphPinType, FPEGraphTerminalType InPinValueType,
     int32 InLFlags, int32 InHFlags, int32 InLifetimeCondition)
 {
@@ -974,7 +1053,8 @@ void UPEBlueprintAsset::AddMemberVariable(FName NewVarName, FPEGraphPinType InGr
 
     if (auto ComponentClass = Cast<UClass>(PinType.PinSubCategoryObject))
     {
-        if (Blueprint->SimpleConstructionScript && PinType.PinCategory == UEdGraphSchema_K2::PC_Object &&
+        if (Blueprint->GeneratedClass->IsChildOf<AActor>() && Blueprint->SimpleConstructionScript &&
+            PinType.PinCategory == UEdGraphSchema_K2::PC_Object &&
             (ComponentClass == UActorComponent::StaticClass() || ComponentClass->IsChildOf<UActorComponent>()))
         {
             auto SCSNode = Blueprint->SimpleConstructionScript->FindSCSNode(NewVarName);
@@ -988,7 +1068,7 @@ void UPEBlueprintAsset::AddMemberVariable(FName NewVarName, FPEGraphPinType InGr
                 Blueprint->SimpleConstructionScript->AddNode(NewSCSNode);
                 NeedSave = true;
             }
-
+            ComponentsAdded.Add(NewVarName);
             return;
         }
     }
@@ -1096,6 +1176,35 @@ void UPEBlueprintAsset::AddMemberVariableWithMetaData(FName InNewVarName, FPEGra
     NeedSave = InMetaData->Apply(Blueprint->NewVariables[VarIndex]) || NeedSave;
     if (NeedSave)
         CanChangeCheck();
+}
+
+void UPEBlueprintAsset::RemoveNotExistedComponent()
+{
+    if (IsPlaying())
+    {
+        return;
+    }
+    if (Blueprint && Blueprint->GeneratedClass && Blueprint->GeneratedClass->IsChildOf<AActor>())
+    {
+        ComponentsAdded.Add(TEXT("DefaultSceneRoot"));
+    }
+    if (Blueprint && Blueprint->SimpleConstructionScript)
+    {
+        TArray<FName> ToDelete;
+        for (int32 i = 0; i < Blueprint->SimpleConstructionScript->GetAllNodes().Num(); i++)
+        {
+            if (!ComponentsAdded.Contains(Blueprint->SimpleConstructionScript->GetAllNodes()[i]->GetVariableName()))
+            {
+                ToDelete.Add(Blueprint->SimpleConstructionScript->GetAllNodes()[i]->GetVariableName());
+            }
+        }
+        for (auto Name : ToDelete)
+        {
+            NeedSave = true;
+            RemoveComponent(Name);
+        }
+    }
+    // ComponentsAdded.Empty();
 }
 
 void UPEBlueprintAsset::RemoveNotExistedMemberVariable()

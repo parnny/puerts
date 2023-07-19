@@ -3,10 +3,10 @@
 [![license](https://img.shields.io/badge/license-BSD_3_Clause-blue.svg)](https://github.com/Tencent/puerts/blob/master/LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-blue.svg)](https://github.com/Tencent/puerts/pulls)
 
-[![unreal](https://img.shields.io/badge/unreal-v1.0.3-blue.svg)](https://github.com/Tencent/puerts/releases/tag/Unreal_v1.0.3)
+[![unreal](https://img.shields.io/badge/unreal-v1.0.4-blue.svg)](https://github.com/Tencent/puerts/releases/tag/Unreal_v1.0.4)
 
-[![unity](https://img.shields.io/badge/unity_stable-v1.4.1-blue.svg)](doc/unity/zhcn/install.md)
-[![unity](https://img.shields.io/badge/unity_preview-v2.0.0_pre.3-blue.svg)](doc/unity/zhcn/install.md)
+[![unity](https://img.shields.io/badge/unity(stable)-v1.4.2-blue.svg)](doc/unity/zhcn/install.md)
+[![unity](https://img.shields.io/badge/unity(latest)-v2.0.0_rc.0-blue.svg)](doc/unity/zhcn/install.md)
 ![Unity_Test](https://github.com/Tencent/puerts/workflows/unity%20unittest/badge.svg)
 
 ## What？
@@ -96,6 +96,8 @@ PuerTS is a TypeScript programming solution within game engines. | PuerTS是游�
 [Discord](https://discord.gg/RYRY7D833n)
 
 [Github Discussion](https://github.com/Tencent/puerts/discussions)
+
+QQ频道：cees1s2p9p
 
 QQ群：942696334
 

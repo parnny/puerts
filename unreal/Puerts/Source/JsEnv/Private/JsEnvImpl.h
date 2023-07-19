@@ -42,6 +42,11 @@
 #pragma warning(pop)
 #endif
 
+#if USE_WASM3
+#include "WasmRuntime.h"
+#include "PuertsWasm/WasmJsFunctionParams.h"
+#endif
+
 #if V8_MAJOR_VERSION < 8 || defined(WITH_QUICKJS) || defined(WITH_NODEJS) || (WITH_EDITOR && !defined(FORCE_USE_STATIC_V8_LIB))
 #define WITH_BACKING_STORE_AUTO_FREE 0
 #else
@@ -70,8 +75,8 @@ public:
     explicit FJsEnvImpl(const FString& ScriptRoot);
 
     FJsEnvImpl(std::shared_ptr<IJSModuleLoader> InModuleLoader, std::shared_ptr<ILogger> InLogger, int InPort,
-        std::function<void(const FString&)> InOnSourceLoadedCallback, void* InExternalRuntime = nullptr,
-        void* InExternalContext = nullptr);
+        std::function<void(const FString&)> InOnSourceLoadedCallback, const FString InFlags, void* InExternalRuntime,
+        void* InExternalContext);
 
     virtual ~FJsEnvImpl() override;
 
@@ -184,7 +189,7 @@ public:
 
     virtual PropertyMacro* FindDelegateProperty(void* DelegatePtr) override;
 
-    virtual FScriptDelegate NewManualReleaseDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context,
+    virtual FScriptDelegate NewDelegate(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, UObject* Owner,
         v8::Local<v8::Function> JsFunction, UFunction* SignatureFunction) override;
 
     void ReleaseManualReleaseDelegate(const v8::FunctionCallbackInfo<v8::Value>& Info);
@@ -223,7 +228,7 @@ public:
 
     void InvokeMixinMethod(UObject* ContextObject, UJSGeneratedFunction* Function, FFrame& Stack, void* RESULT_PARAM);
 
-    void TypeScriptInitial(UClass* Class, UObject* Object);
+    void TypeScriptInitial(UClass* Class, UObject* Object, const bool TypeScriptClassFound = false);
 
     void InvokeTsMethod(UObject* ContextObject, UFunction* Function, FFrame& Stack, void* RESULT_PARAM);
 
@@ -417,6 +422,24 @@ private:
 
     friend ObjectMerger;
 
+#if USE_WASM3
+    std::shared_ptr<WasmEnv> PuertsWasmEnv;
+    //在执行module.instance的时候,如果有指定memory,那么这个module对应会创建一个runtime
+    TArray<std::shared_ptr<WasmRuntime>> PuertsWasmRuntimeList;
+    TArray<WasmNormalLinkInfo*> PuertsWasmCachedLinkFunctionList;
+
+protected:
+    void Wasm_NewMemory(const v8::FunctionCallbackInfo<v8::Value>& Info);
+    void Wasm_MemoryGrowth(const v8::FunctionCallbackInfo<v8::Value>& Info);
+    void Wasm_MemoryBuffer(const v8::FunctionCallbackInfo<v8::Value>& Info);
+    void Wasm_TableGrowth(const v8::FunctionCallbackInfo<v8::Value>& Info);
+    void Wasm_TableSet(const v8::FunctionCallbackInfo<v8::Value>& Info);
+    void Wasm_TableLen(const v8::FunctionCallbackInfo<v8::Value>& Info);
+    void Wasm_Instance(const v8::FunctionCallbackInfo<v8::Value>& Info);
+    void Wasm_OverrideWebAssembly(const v8::FunctionCallbackInfo<v8::Value>& Info);
+
+#endif
+
 public:
 #if !defined(ENGINE_INDEPENDENT_JSENV)
     class TsDynamicInvokerImpl : public ITsDynamicInvoker
@@ -510,6 +533,10 @@ private:
     v8::Global<v8::Function> GetESMMain;
 
     v8::Global<v8::Function> ReloadJs;
+
+#if !PUERTS_FORCE_CPP_UFUNCTION
+    v8::Global<v8::Function> MergePrototype;
+#endif
 
     TMap<UStruct*, FTemplateInfo> TypeToTemplateInfoMap;
 
@@ -661,6 +688,8 @@ private:
     v8::Global<v8::Map> ManualReleaseCallbackMap;
 
     std::vector<TWeakObjectPtr<UDynamicDelegateProxy>> ManualReleaseCallbackList;
+
+    TMap<UObject*, TArray<TWeakObjectPtr<UDynamicDelegateProxy>>> AutoReleaseCallbacksMap;
 
 #ifndef WITH_QUICKJS
     TMap<FString, v8::Global<v8::Module>> PathToModule;
