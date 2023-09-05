@@ -112,6 +112,7 @@ public class JsEnv : ModuleRules
         }
         else if (UseQuickjs)
         {
+            ForceStaticLibInEditor = true;
             ThirdPartyQJS(Target);
         }
         else if (UseNewV8)
@@ -333,11 +334,10 @@ public class JsEnv : ModuleRules
     
     void MacDylib(string LibraryPath)
     {
-        string V8LibraryPath = Path.Combine(LibraryPath, "macOSdylib");
-        PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libv8.dylib"));
-        PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libv8_libplatform.dylib"));
-        PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libv8_libbase.dylib"));
-        PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libchrome_zlib.dylib"));
+        PublicAdditionalLibraries.Add(Path.Combine(LibraryPath, "libv8.dylib"));
+        PublicAdditionalLibraries.Add(Path.Combine(LibraryPath, "libv8_libplatform.dylib"));
+        PublicAdditionalLibraries.Add(Path.Combine(LibraryPath, "libv8_libbase.dylib"));
+        PublicAdditionalLibraries.Add(Path.Combine(LibraryPath, "libchrome_zlib.dylib"));
     }
 
     void ThirdParty(ReadOnlyTargetRules Target)
@@ -374,11 +374,24 @@ public class JsEnv : ModuleRules
             //PublicFrameworks.AddRange(new string[] { "WebKit" });
             if (!Target.bBuildEditor || ForceStaticLibInEditor)
             {
-                string V8LibraryPath = Path.Combine(LibraryPath, "macOS");
-                PublicAdditionalLibraries.Add(Path.Combine(V8LibraryPath, "libwee8.a"));
+                LibraryPath = Path.Combine(LibraryPath, "macOS");
+#if UE_5_2_OR_LATER
+                if (Target.Architecture == UnrealArch.Arm64)
+                {
+                    LibraryPath += "_arm64";
+                }
+#endif
+                PublicAdditionalLibraries.Add(Path.Combine(LibraryPath, "libwee8.a"));
             }
             else
             {
+                LibraryPath = Path.Combine(LibraryPath, "macOSdylib");
+#if UE_5_2_OR_LATER
+                if (Target.Architecture == UnrealArch.Arm64)
+                {
+                    LibraryPath += "_arm64";
+                }
+#endif
                 MacDylib(LibraryPath);
             }
         }

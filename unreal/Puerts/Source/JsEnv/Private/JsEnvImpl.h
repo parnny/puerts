@@ -15,7 +15,6 @@
 #include "V8Utils.h"
 #include "ObjectMapper.h"
 #include "JSLogger.h"
-#include "TickerDelegateWrapper.h"
 #if !defined(ENGINE_INDEPENDENT_JSENV)
 #include "TypeScriptGeneratedClass.h"
 #endif
@@ -169,9 +168,6 @@ public:
 
     virtual void UnBindContainer(void* Ptr) override;
 
-    virtual v8::Local<v8::Value> FindOrAddContainer(v8::Isolate* Isolate, v8::Local<v8::Context>& Context,
-        v8::Local<v8::Function> Constructor, PropertyMacro* Property1, PropertyMacro* Property2, void* Ptr, bool PassByPointer);
-
     virtual v8::Local<v8::Value> FindOrAddContainer(v8::Isolate* Isolate, v8::Local<v8::Context>& Context, PropertyMacro* Property,
         FScriptArray* Ptr, bool PassByPointer) override;
 
@@ -297,10 +293,9 @@ private:
 
     void SetFTickerDelegate(const v8::FunctionCallbackInfo<v8::Value>& Info, bool Continue);
 
-    void ReportExecutionException(
-        v8::Isolate* Isolate, v8::TryCatch* TryCatch, std::function<void(const JSError*)> CompletionHandler);
+    bool TimerCallback(int DelegateHandleId, bool Continue);
 
-    void RemoveFTickerDelegateHandle(FUETickDelegateHandle* Handle);
+    void RemoveFTickerDelegateHandle(int HandleId);
 
     void SetInterval(const v8::FunctionCallbackInfo<v8::Value>& Info);
 
@@ -673,7 +668,12 @@ private:
 
     bool ExtensionMethodsMapInited = false;
 
-    std::map<FUETickDelegateHandle*, FTickerDelegateWrapper*> TickerDelegateHandleMap;
+    struct FTimerInfo
+    {
+        v8::Global<v8::Function> Callback;
+        FUETickDelegateHandle TickerHandle;
+    };
+    TSparseArray<FTimerInfo> TimerInfos;
 
     FUETickDelegateHandle DelegateProxiesCheckerHandler;
 

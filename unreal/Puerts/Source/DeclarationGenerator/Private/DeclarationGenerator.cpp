@@ -530,8 +530,7 @@ void FTypeScriptDeclarationGenerator::WriteOutput(UObject* Obj, const FStringBuf
 void FTypeScriptDeclarationGenerator::RestoreBlueprintTypeDeclInfos(bool InGenFull)
 {
     FString FileContent;
-    FFileHelper::LoadFileToString(
-        FileContent, *(IPluginManager::Get().FindPlugin("Puerts")->GetBaseDir() / TEXT("Typing/ue/ue_bp.d.ts")));
+    FFileHelper::LoadFileToString(FileContent, *(FPaths::ProjectDir() / TEXT("Typing/ue/ue_bp.d.ts")));
     RestoreBlueprintTypeDeclInfos(FileContent, InGenFull);
 }
 
@@ -1186,9 +1185,17 @@ void FTypeScriptDeclarationGenerator::GenClass(UClass* Class)
 
     StringBuffer << "    constructor(Outer?: Object, Name?: string, ObjectFlags?: number);\n";
 
+    TSet<FString> AddedProperties;
+
     for (TFieldIterator<PropertyMacro> PropertyIt(Class, EFieldIteratorFlags::ExcludeSuper); PropertyIt; ++PropertyIt)
     {
         auto Property = *PropertyIt;
+
+        if (AddedProperties.Contains(Property->GetName()))
+        {
+            continue;
+        }
+        AddedProperties.Add(Property->GetName());
 
         FStringBuffer TmpBuff;
         TmpBuff << SafeFieldName(Property->GetName()) << ": ";

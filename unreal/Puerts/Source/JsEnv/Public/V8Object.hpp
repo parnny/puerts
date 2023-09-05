@@ -22,7 +22,7 @@ namespace puerts
 {
 namespace v8_impl
 {
-static void REPORT_EXCEPTION(v8::Isolate* Isolate, v8::TryCatch* TC)
+static inline void REPORT_EXCEPTION(v8::Isolate* Isolate, v8::TryCatch* TC)
 {
 #ifdef USING_IN_UNREAL_ENGINE
     UE_LOG(Puerts, Error, TEXT("call function throw: %s"), *puerts::FV8Utils::TryCatchToString(Isolate, TC));
@@ -48,6 +48,11 @@ public:
 
     Object(const Object& InOther)
     {
+        if (InOther.JsEnvLifeCycleTracker.expired())
+        {
+            JsEnvLifeCycleTracker = InOther.JsEnvLifeCycleTracker;
+            return;
+        }
         Isolate = InOther.Isolate;
         v8::Isolate::Scope IsolateScope(Isolate);
         v8::HandleScope HandleScope(Isolate);
@@ -58,6 +63,11 @@ public:
 
     Object& operator=(const Object& InOther)
     {
+        if (InOther.JsEnvLifeCycleTracker.expired())
+        {
+            JsEnvLifeCycleTracker = InOther.JsEnvLifeCycleTracker;
+            return *this;
+        }
         Isolate = InOther.Isolate;
         v8::Isolate::Scope IsolateScope(Isolate);
         v8::HandleScope HandleScope(Isolate);

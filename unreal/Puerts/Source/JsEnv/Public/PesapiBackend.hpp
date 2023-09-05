@@ -13,7 +13,7 @@
 #include <cstring>
 #include <functional>
 #include <vector>
-#include <pesapi.h>
+#include "pesapi.h"
 #include "TypeInfo.hpp"
 
 #define __DefObjectType_pesapi_impl(CLS)              \
@@ -85,17 +85,8 @@ struct API
         void* Data = nullptr;
     };
 
-    struct GeneralFunctionReflectionInfo
-    {
-        const char* Name;
-        const CFunctionInfo* Type;
-    };
-
-    struct GeneralPropertyReflectionInfo
-    {
-        const char* Name;
-        const CTypeInfo* Type;
-    };
+    typedef NamedFunctionInfo GeneralFunctionReflectionInfo;
+    typedef NamedPropertyInfo GeneralPropertyReflectionInfo;
 
     inline static int GetArgsLen(pesapi_callback_info info)
     {
@@ -171,27 +162,55 @@ struct API
         size_t pos = 0;
         for (const auto& func : Cdb.functions_)
         {
-            pesapi_set_method_info(properties, pos++, func.Name, true, func.Callback, nullptr, nullptr);
+            pesapi_set_method_info(
+                properties, pos++, func.Name, true, reinterpret_cast<FunctionCallbackType>(func.Callback), nullptr, nullptr);
         }
 
         for (const auto& method : Cdb.methods_)
         {
-            pesapi_set_method_info(properties, pos++, method.Name, false, method.Callback, nullptr, nullptr);
+            pesapi_set_method_info(
+                properties, pos++, method.Name, false, reinterpret_cast<FunctionCallbackType>(method.Callback), nullptr, nullptr);
         }
 
         for (const auto& prop : Cdb.properties_)
         {
-            pesapi_set_property_info(properties, pos++, prop.Name, false, prop.Getter, prop.Setter, nullptr, nullptr);
+            pesapi_set_property_info(properties, pos++, prop.Name, false, reinterpret_cast<FunctionCallbackType>(prop.Getter),
+                reinterpret_cast<FunctionCallbackType>(prop.Setter), nullptr, nullptr);
         }
 
         for (const auto& prop : Cdb.variables_)
         {
-            pesapi_set_property_info(properties, pos++, prop.Name, true, prop.Getter, prop.Setter, nullptr, nullptr);
+            pesapi_set_property_info(properties, pos++, prop.Name, true, reinterpret_cast<FunctionCallbackType>(prop.Getter),
+                reinterpret_cast<FunctionCallbackType>(prop.Setter), nullptr, nullptr);
         }
 
         pesapi_finalize finalize = Finalize;
-        pesapi_define_class(StaticTypeId<T>::get(), Cdb.superTypeId_, Cdb.className_, Cdb.constructor_, finalize, properties_count,
-            properties, nullptr);
+        pesapi_define_class(StaticTypeId<T>::get(), Cdb.superTypeId_, Cdb.className_,
+            reinterpret_cast<InitializeFuncType>(Cdb.constructor_), finalize, properties_count, properties, nullptr);
+
+        static std::vector<NamedFunctionInfo> s_constructorInfos_{};
+        static std::vector<NamedFunctionInfo> s_methodInfos_{};
+        static std::vector<NamedFunctionInfo> s_functionInfos_{};
+        static std::vector<NamedPropertyInfo> s_propertyInfos_{};
+        static std::vector<NamedPropertyInfo> s_variableInfos_{};
+
+        s_constructorInfos_ = std::move(Cdb.constructorInfos_);
+        s_constructorInfos_.push_back(NamedFunctionInfo{nullptr, nullptr});
+
+        s_methodInfos_ = std::move(Cdb.methodInfos_);
+        s_methodInfos_.push_back(NamedFunctionInfo{nullptr, nullptr});
+
+        s_functionInfos_ = std::move(Cdb.functionInfos_);
+        s_functionInfos_.push_back(NamedFunctionInfo{nullptr, nullptr});
+
+        s_propertyInfos_ = std::move(Cdb.propertyInfos_);
+        s_propertyInfos_.push_back(NamedPropertyInfo{nullptr, nullptr});
+
+        s_variableInfos_ = std::move(Cdb.variableInfos_);
+        s_variableInfos_.push_back(NamedPropertyInfo{nullptr, nullptr});
+
+        pesapi_class_type_info(PUERTS_BINDING_PROTO_ID(), StaticTypeId<T>::get(), s_constructorInfos_.data(), s_methodInfos_.data(),
+            s_functionInfos_.data(), s_propertyInfos_.data(), s_variableInfos_.data());
     }
 
     template <typename T>

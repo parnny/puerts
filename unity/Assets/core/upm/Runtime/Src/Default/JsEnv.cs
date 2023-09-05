@@ -52,6 +52,12 @@ namespace Puerts
 
         internal IntPtr isolate;
 
+        public IntPtr Isolate {
+            get {
+                return isolate;
+            }
+        }
+
         internal ObjectPool objectPool;
 
         private readonly ILoader loader;
@@ -544,12 +550,12 @@ namespace Puerts
                     if (PuertsDLL.GetJsValueType(isolate, value, false) != JsValueType.Function) 
                     {
                         throw new Exception("invalid Type for generic arguments " + (i - 2));
-                    };
+                    }
                     var argTypeId = PuertsDLL.GetTypeIdFromValue(isolate, value, false);
                     if (argTypeId == -1) 
                     {
                         throw new Exception("invalid Type for generic arguments " + (i - 2));
-                    };
+                    }
                     genericArguments[i - 2] = TypeManager.GetType(argTypeId);
                 }
 
@@ -889,11 +895,10 @@ namespace Puerts
             lock (funcRefCount)
             {
                 pendingRemovedList.Clear();
-                var funcRefKeyList = funcRefCount.Keys.ToList();
-                for (int i = 0, l = funcRefKeyList.Count; i < l; i++)
+                var enumerator = funcRefCount.GetEnumerator();
+                while (enumerator.MoveNext())
                 {
-                    var k = funcRefKeyList[i];
-                    if (funcRefCount[k] <= 0) pendingRemovedList.Add(k);
+                    if (enumerator.Current.Value <= 0) pendingRemovedList.Add(enumerator.Current.Key);
                 }
                 for(int i = 0; i  < pendingRemovedList.Count; ++i)
                 {
@@ -916,11 +921,10 @@ namespace Puerts
             lock (JSObjRefCount)
             {
                 pendingRemovedJsObjList.Clear();
-                var JSObjRefKeyList = JSObjRefCount.Keys.ToList();
-                for (int i = 0, l = JSObjRefKeyList.Count; i < l; i++)
+                var enumerator = JSObjRefCount.GetEnumerator();
+                while (enumerator.MoveNext())
                 {
-                    var k = JSObjRefKeyList[i];
-                    if (JSObjRefCount[k] <= 0) pendingRemovedList.Add(k);
+                    if (enumerator.Current.Value <= 0) pendingRemovedJsObjList.Add(enumerator.Current.Key);
                 }
                 for(int i = 0; i  < pendingRemovedJsObjList.Count; ++i)
                 {

@@ -5,6 +5,7 @@
 * This file is subject to the terms and conditions defined in file 'LICENSE', which is part of this source code package.
 */
 #include "BackendEnv.h"
+#include "Log.h"
 #include "PromiseRejectCallback.hpp"
 
 #pragma warning(push, 0)  
@@ -29,32 +30,6 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #endif
-
-#else // !WITH_NODEJS
-
-#if defined(PLATFORM_WINDOWS)
-
-#if _WIN64
-#include "Blob/Win64/SnapshotBlob.h"
-#else
-#include "Blob/Win32/SnapshotBlob.h"
-#endif
-
-#elif defined(PLATFORM_ANDROID_ARM)
-#include "Blob/Android/armv7a/SnapshotBlob.h"
-#elif defined(PLATFORM_ANDROID_ARM64)
-#include "Blob/Android/arm64/SnapshotBlob.h"
-#elif defined(PLATFORM_ANDROID_x64)
-#include "Blob/Android/x64/SnapshotBlob.h"
-#elif defined(PLATFORM_MAC_ARM64)
-#include "Blob/macOS_arm64/SnapshotBlob.h"
-#elif defined(PLATFORM_MAC)
-#include "Blob/macOS/SnapshotBlob.h"
-#elif defined(PLATFORM_IOS)
-#include "Blob/iOS/arm64/SnapshotBlob.h"
-#elif defined(PLATFORM_LINUX)
-#include "Blob/Linux/SnapshotBlob.h"
-#endif // defined(PLATFORM_WINDOWS)
 
 #endif // WITH_NODEJS
 
@@ -275,10 +250,6 @@ v8::Isolate* puerts::BackendEnv::CreateIsolate(void* external_quickjs_runtime)
 
     MainIsolate->SetMicrotasksPolicy(v8::MicrotasksPolicy::kAuto);
 #else
-    v8::StartupData SnapshotBlob;
-    SnapshotBlob.data = (const char *)SnapshotBlobCode;
-    SnapshotBlob.raw_size = sizeof(SnapshotBlobCode);
-    v8::V8::SetSnapshotDataBlob(&SnapshotBlob);
 
     // 初始化Isolate和DefaultContext
     CreateParams = new v8::Isolate::CreateParams();
@@ -473,20 +444,38 @@ static v8::MaybeLocal<v8::Value> CallResolver(
 
     return maybeRet;
 }
+
 static v8::MaybeLocal<v8::Value> CallRead(
     v8::Isolate* Isolate,
     v8::Local<v8::Context> Context,
-    v8::Local<v8::Value> URL
+    v8::Local<v8::Value> URL,
+    std::string &pathForDebug
 )
 {
     std::vector< v8::Local<v8::Value>> V8Args;
 
-    v8::Local<v8::Function> ModuleResolveFunction = v8::Local<v8::Function>::Cast(Context->Global()->Get(Context, v8::String::NewFromUtf8(Isolate, "__puer_resolve_module_content__").ToLocalChecked()).ToLocalChecked());
-    char* pathForDebug;
+    v8::Local<v8::Function> ModuleReadFunction = v8::Local<v8::Function>::Cast(Context->Global()->Get(Context, v8::String::NewFromUtf8(Isolate, "__puer_resolve_module_content__").ToLocalChecked()).ToLocalChecked());
 
     V8Args.push_back(URL);
-    v8::MaybeLocal<v8::Value>maybeRet = ModuleResolveFunction->Call(Context, Context->Global(), 1, V8Args.data());
+
+#if !WITH_QUICKJS
+    v8::Local<v8::Array> pathForDebugRef = v8::Array::New(Isolate, 0);
+    V8Args.push_back(pathForDebugRef);
+    v8::MaybeLocal<v8::Value> maybeRet = ModuleReadFunction->Call(Context, Context->Global(), 2, V8Args.data());
+#else
+    v8::MaybeLocal<v8::Value> maybeRet = ModuleReadFunction->Call(Context, Context->Global(), 1, V8Args.data());
+#endif
+
+    v8::Local<v8::Value> pathForDebugValue;
+
     V8Args.clear();
+#if !WITH_QUICKJS
+    if (pathForDebugRef->Length() == 1 && pathForDebugRef->Get(Context, 0).ToLocal(&pathForDebugValue))
+    {
+        v8::String::Utf8Value pathForDebug_utf8(Isolate, pathForDebugValue);
+        pathForDebug = std::string(*pathForDebug_utf8, pathForDebug_utf8.length());
+    }
+#endif
 
     return maybeRet;
 }
@@ -606,7 +595,11 @@ v8::MaybeLocal<v8::Module> puerts::esmodule::_ResolveModule(
     BackendEnv* mm = (BackendEnv*)Isolate->GetData(1);
 
     v8::Local<v8::Value> ReferrerName;
+#if V8_94_OR_NEWER
     const auto referIter = mm->ScriptIdToPathMap.find(Referrer->ScriptId()); 
+#else 
+    const auto referIter = mm->ScriptIdToPathMap.find(Referrer->GetIdentityHash()); 
+#endif
     if (referIter != mm->ScriptIdToPathMap.end())
     {
         std::string referPath_std = referIter->second;
@@ -634,23 +627,27 @@ v8::MaybeLocal<v8::Module> puerts::esmodule::_ResolveModule(
         return v8::Local<v8::Module>::New(Isolate, cacheIter->second);
     }
     
-    maybeRet = CallRead(Isolate, Context, Specifier);
+    std::string pathForDebug;
+    maybeRet = CallRead(Isolate, Context, Specifier, pathForDebug);
     if (maybeRet.IsEmpty()) 
     {
         return v8::MaybeLocal<v8::Module> {};
     }
     v8::Local<v8::String> Code = v8::Local<v8::String>::Cast(maybeRet.ToLocalChecked());
 
-    v8::ScriptOrigin Origin(Specifier,
-                        v8::Integer::New(Isolate, 0),                      // line offset
-                        v8::Integer::New(Isolate, 0),                    // column offset
-                        v8::True(Isolate),                    // is cross origin
-                        v8::Local<v8::Integer>(),                 // script id
-                        v8::Local<v8::Value>(),                   // source map URL
-                        v8::False(Isolate),                   // is opaque (?)
-                        v8::False(Isolate),                   // is WASM
-                        v8::True(Isolate),                    // is ES Module
-                        v8::PrimitiveArray::New(Isolate, 10));
+    v8::ScriptOrigin Origin(pathForDebug.size() == 0 ? 
+        Specifier : 
+        v8::String::NewFromUtf8(Isolate, pathForDebug.c_str()).ToLocalChecked(),
+        v8::Integer::New(Isolate, 0),                      // line offset
+        v8::Integer::New(Isolate, 0),                    // column offset
+        v8::True(Isolate),                    // is cross origin
+        v8::Local<v8::Integer>(),                 // script id
+        v8::Local<v8::Value>(),                   // source map URL
+        v8::False(Isolate),                   // is opaque (?)
+        v8::False(Isolate),                   // is WASM
+        v8::True(Isolate),                    // is ES Module
+        v8::PrimitiveArray::New(Isolate, 10)
+    );
 
     v8::ScriptCompiler::CompileOptions options;
 
@@ -662,7 +659,11 @@ v8::MaybeLocal<v8::Module> puerts::esmodule::_ResolveModule(
     {
         return v8::MaybeLocal<v8::Module> {};
     }
+#if V8_94_OR_NEWER
     mm->ScriptIdToPathMap[Module->ScriptId()] = Specifier_std;
+#else 
+    mm->ScriptIdToPathMap[Module->GetIdentityHash()] = Specifier_std;
+#endif
     mm->PathToModuleMap[Specifier_std] = v8::UniquePersistent<v8::Module>(Isolate, Module);
     return Module;
 }
@@ -711,7 +712,11 @@ void puerts::esmodule::HostInitializeImportMetaObject(v8::Local<v8::Context> Con
     v8::Isolate* Isolate = Context->GetIsolate();
     BackendEnv* mm = (BackendEnv*)Isolate->GetData(1);
 
+#if V8_94_OR_NEWER
     auto iter = mm->ScriptIdToPathMap.find(Module->ScriptId());
+#else 
+    auto iter = mm->ScriptIdToPathMap.find(Module->GetIdentityHash());
+#endif
     if (iter != mm->ScriptIdToPathMap.end()) 
     {
         meta->CreateDataProperty(
@@ -777,9 +782,10 @@ JSModuleDef* puerts::esmodule::js_module_loader(
         return Iter->second;
     }
 
+    std::string pathForDebug;
     v8::Local<v8::Value> Specifier = v8::String::NewFromUtf8(Isolate, name).ToLocalChecked();
     v8::TryCatch TryCatch(Isolate);
-    v8::MaybeLocal<v8::Value> maybeRet = CallRead(Isolate, Context, Specifier);
+    v8::MaybeLocal<v8::Value> maybeRet = CallRead(Isolate, Context, Specifier, pathForDebug);
     v8::Local<v8::Value> ret;
     if (maybeRet.IsEmpty() || !((ret = maybeRet.ToLocalChecked())->IsString()))
     {

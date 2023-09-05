@@ -26,6 +26,13 @@
     };                                          \
     }
 
+#define PUERTS_BINDING_PROTO_ID() "fdq4falqlqcq"
+
+namespace v8
+{
+class CFunction;
+}
+
 namespace puerts
 {
 namespace internal
@@ -291,9 +298,7 @@ public:
     virtual unsigned int DefaultCount() const = 0;
     virtual const CTypeInfo* Argument(unsigned int index) const = 0;
     virtual const char* CustomSignature() const = 0;
-#ifdef WITH_V8_FAST_CALL
     virtual const class v8::CFunction* FastCallInfo() const = 0;
-#endif
 };
 
 template <typename T, bool ScriptTypePtrAsRef>
@@ -379,12 +384,10 @@ public:
     {
         return nullptr;
     }
-#ifdef WITH_V8_FAST_CALL
     virtual const class v8::CFunction* FastCallInfo() const override
     {
         return nullptr;
     };
-#endif
 
     static const CFunctionInfo* get(unsigned int defaultCount)
     {
@@ -501,6 +504,22 @@ public:
     {
         return _signature;
     }
+    virtual const class v8::CFunction* FastCallInfo() const override
+    {
+        return nullptr;
+    };
+};
+
+struct NamedFunctionInfo
+{
+    const char* Name;
+    const CFunctionInfo* Type;
+};
+
+struct NamedPropertyInfo
+{
+    const char* Name;
+    const CTypeInfo* Type;
 };
 
 }    // namespace puerts
