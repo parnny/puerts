@@ -2431,10 +2431,18 @@ FScriptDelegate FJsEnvImpl::NewDelegate(v8::Isolate* Isolate, v8::Local<v8::Cont
         {
             DelegateProxy = Cast<UDynamicDelegateProxy>(
                 static_cast<UObject*>(v8::Local<v8::External>::Cast(MaybeProxy.ToLocalChecked())->Value()));
+            if (DelegateProxy->SignatureFunction.Get() != SignatureFunction)
+            {
+                Logger->Error(TEXT("aleady bind to another delegate pleace release first!"));
+                DelegateProxy = nullptr;
+            }
         }
     }
     FScriptDelegate Delegate;
-    Delegate.BindUFunction(DelegateProxy, NAME_Fire);
+    if (DelegateProxy)
+    {
+        Delegate.BindUFunction(DelegateProxy, NAME_Fire);
+    }
     return Delegate;
 }
 
@@ -2667,7 +2675,7 @@ v8::Local<v8::Value> FJsEnvImpl::FindOrAddContainer(
     }
 
     auto Result = ArrayTemplate.Get(Isolate)->InstanceTemplate()->NewInstance(Context).ToLocalChecked();
-    FV8Utils::IsolateData<IObjectMapper>(Isolate)->BindContainer(
+    BindContainer(
         Ptr, Result, PassByPointer ? FScriptArrayWrapper::OnGarbageCollected : FScriptArrayWrapper::OnGarbageCollectedWithFree);
     DataTransfer::SetPointer(Isolate, Result, GetContainerPropertyTranslator(Property), 1);
     return Result;
@@ -2685,7 +2693,7 @@ v8::Local<v8::Value> FJsEnvImpl::FindOrAddContainer(
     }
 
     auto Result = SetTemplate.Get(Isolate)->InstanceTemplate()->NewInstance(Context).ToLocalChecked();
-    FV8Utils::IsolateData<IObjectMapper>(Isolate)->BindContainer(
+    BindContainer(
         Ptr, Result, PassByPointer ? FScriptSetWrapper::OnGarbageCollected : FScriptSetWrapper::OnGarbageCollectedWithFree);
     DataTransfer::SetPointer(Isolate, Result, GetContainerPropertyTranslator(Property), 1);
     return Result;
@@ -2703,7 +2711,7 @@ v8::Local<v8::Value> FJsEnvImpl::FindOrAddContainer(v8::Isolate* Isolate, v8::Lo
     }
 
     auto Result = MapTemplate.Get(Isolate)->InstanceTemplate()->NewInstance(Context).ToLocalChecked();
-    FV8Utils::IsolateData<IObjectMapper>(Isolate)->BindContainer(
+    BindContainer(
         Ptr, Result, PassByPointer ? FScriptMapWrapper::OnGarbageCollected : FScriptMapWrapper::OnGarbageCollectedWithFree);
     DataTransfer::SetPointer(Isolate, Result, GetContainerPropertyTranslator(KeyProperty), 1);
     DataTransfer::SetPointer(Isolate, Result, GetContainerPropertyTranslator(ValueProperty), 2);
@@ -3581,7 +3589,7 @@ v8::MaybeLocal<v8::Module> FJsEnvImpl::FetchESModuleTree(v8::Local<v8::Context> 
 }
 #endif
 
-void FJsEnvImpl::ExecuteModule(const FString& ModuleName, std::function<FString(const FString&, const FString&)> Preprocessor)
+void FJsEnvImpl::ExecuteModule(const FString& ModuleName)
 {
     FString OutPath;
     FString DebugPath;
@@ -3631,20 +3639,7 @@ void FJsEnvImpl::ExecuteModule(const FString& ModuleName, std::function<FString(
     else
 #endif
     {
-        v8::Local<v8::String> Source;
-        if (Preprocessor)
-        {
-            FString Script;
-            FFileHelper::BufferToString(Script, Data.GetData(), Data.Num());
-
-            if (Preprocessor)
-                Script = Preprocessor(Script, OutPath);
-            Source = FV8Utils::ToV8String(Isolate, Script);
-        }
-        else
-        {
-            Source = FV8Utils::ToV8StringFromFileContent(Isolate, Data);
-        }
+        v8::Local<v8::String> Source = FV8Utils::ToV8StringFromFileContent(Isolate, Data);
 
 #if PLATFORM_WINDOWS
         // 修改URL分隔符格式，否则无法匹配Inspector协议在打断点时发送的正则表达式，导致断点失败
@@ -3702,10 +3697,26 @@ void FJsEnvImpl::EvalScript(const v8::FunctionCallbackInfo<v8::Value>& Info)
 
         if (RootModule->InstantiateModule(Context, ResolveModuleCallback).FromMaybe(false))
         {
-            auto Result = RootModule->Evaluate(Context);
-            if (!Result.IsEmpty())
+            auto MaybeResult = RootModule->Evaluate(Context);
+            v8::Local<v8::Value> Result;
+            if (MaybeResult.ToLocal(&Result))
             {
-                Info.GetReturnValue().Set(Result.ToLocalChecked());
+                if (Result->IsPromise())
+                {
+                    v8::Local<v8::Promise> ResultPromise(Result.As<v8::Promise>());
+                    while (ResultPromise->State() == v8::Promise::kPending)
+                    {
+                        Isolate->PerformMicrotaskCheckpoint();
+                    }
+
+                    if (ResultPromise->State() == v8::Promise::kRejected)
+                    {
+                        ResultPromise->MarkAsHandled();
+                        Isolate->ThrowException(ResultPromise->Result());
+                        return;
+                    }
+                }
+                Info.GetReturnValue().Set(RootModule->GetModuleNamespace());
             }
         }
 
